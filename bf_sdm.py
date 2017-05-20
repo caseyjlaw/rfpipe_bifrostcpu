@@ -21,15 +21,15 @@ class SdmFileRead(sdmpy.sdm.SDM):
     """
 
     def __init__(self, filename, scan_id):
-        super(SdmFileRead, self).__init__(filename, scan_id)
+        super(SdmFileRead, self).__init__(filename)
         self.scan_id = scan_id
         self.sdm = sdmpy.SDM(filename)
         self.scan = self.sdm.scan(self.scan_id)
         
         self.n_baselines = int(len(self.scan.baselines))
-        self.n_chans     = int(self.scan.numchans[0])
-        self.n_pol       = int(self.scan.bdf.spws[0].npol('cross'))
-        self.n_spw       = int(len(self.scan.spws))
+        self.n_chans     = int(self.scan.numchans[0])  # **hack: need to use chan per spw properly
+        self.n_pol       = int(self.scan.bdf.spws[0].npol('cross'))  # **hack: need to use chan per spw properly
+        self.n_spw       = int(len(self.scan.spws))  # **hack: need to use chan per spw properly
         self.shape       = (self.n_baselines, self.n_chans*self.n_spw, self.n_pol)
         self.integration_id = 0
 
@@ -48,18 +48,19 @@ class SdmReadBlock(bfp.SourceBlock):
 
     Args:
         filenames (list): A string of filename to open
+        scan_id (int): 1-based index of scan to read
         gulp_nframe (int): Number of frames in a gulp. (Ask Ben / Miles for good explanation)
-        integration_id (int): 0-based index of integration to read
     """
 
-    def __init__(self, filename, gulp_nframe, integration_id, *args, **kwargs):
+    def __init__(self, filename, scan_id, gulp_nframe=1, *args, **kwargs):
         super(SdmReadBlock, self).__init__([filename], gulp_nframe, *args, **kwargs)  # **hack: filename is string, but list expected here
         self.filename = filename
-        self.integration_id = integration_id
+        self.scan_id = scan_id
+        self.gulp_nframe = gulp_nframe
 
     def create_reader(self, filename):
-        print("Loading sdm file {0}".format(filename))
-        return SdmFileRead(filename, self.integration_id)
+        print("Loading sdm file {0}, scan {1}".format(filename, self.scan_id))
+        return SdmFileRead(filename, self.scan_id)
 
     def on_sequence(self, ireader, filename):
 
@@ -72,7 +73,7 @@ class SdmReadBlock(bfp.SourceBlock):
                         'shape':  [-1, n_baselines, n_chans, n_pol],
                         'labels': ['time', 'baseline', 'chan', 'pol']
                         },
-                'gulp_nframe': 1,
+                'gulp_nframe': self.gulp_nframe,
                 'itershape': shape
                 }
 
@@ -132,12 +133,15 @@ class PrintMeanBlock(bfp.SinkBlock):
 if __name__ == "__main__":
 
     # Setup pipeline
+    assert len(sys.argv) == 3, 'Need sdm filename and scan_id'
     filename   = str(sys.argv[1])
-    b_read      = SdmReadBlock(filename, 1, 16)
-    b_cal       = GainCalBlock(b_read, 'test.txt')
+    scan_id   = str(sys.argv[2])
+
+    b_read      = SdmReadBlock(filename, scan_id)
+    b_cal       = GainCalBlock(b_read, 'fakecal.GN')
     b_scrunched = views.split_axis(
                     b_cal, axis='time',
-                    n=200, label='window')
+                    n=20, label='window')
 #    b_file = BinaryFileWriteBlock(b_scrunched, "output.test")
     b_pr = PrintMeanBlock(b_scrunched)
 
