@@ -1,7 +1,3 @@
-"""
-# binary_file_io.py
-Basic file I/O blocks for reading and writing data.
-"""
 import sys, time, glob
 from datetime import datetime
 from copy import deepcopy
@@ -16,10 +12,12 @@ import sdmpy
 
 class SdmFileRead(sdmpy.sdm.SDM):
     """ File-like object for science data model (sdm) files
+    Based on realfastvla/sdmpy, which has context manager in SDM class.
 
     Args:
         filename (str): Name of sdm file to open
         scan_id (int): 1-based index for scan in sdm file
+
     """
 
     def __init__(self, filename, scan_id):
@@ -33,7 +31,6 @@ class SdmFileRead(sdmpy.sdm.SDM):
         self.n_pol       = int(self.scan.bdf.spws[0].npol('cross'))
         self.n_spw       = int(len(self.scan.spws))
         self.shape       = (self.n_baselines, self.n_chans*self.n_spw, self.n_pol)
-        print(self.shape)
         self.integration_id = 0
 
     def read(self):
@@ -56,20 +53,18 @@ class SdmReadBlock(bfp.SourceBlock):
     """
 
     def __init__(self, filename, gulp_nframe, integration_id, *args, **kwargs):
-        super(SdmReadBlock, self).__init__([filename], gulp_nframe, *args, **kwargs)
+        super(SdmReadBlock, self).__init__([filename], gulp_nframe, *args, **kwargs)  # **hack: filename is string, but list expected here
         self.filename = filename
         self.integration_id = integration_id
 
     def create_reader(self, filename):
-        print "Loading %s" % filename
+        print("Loading sdm file {0}".format(filename))
         return SdmFileRead(filename, self.integration_id)
 
     def on_sequence(self, ireader, filename):
 
-        n_baselines = ireader.n_baselines
-        n_chans     = ireader.n_chans*ireader.n_spw
-        n_pol       = ireader.n_pol
-        shape       = (n_baselines, n_chans, n_pol)
+        shape = ireader.shape
+        n_baselines, n_chans, n_pol = shape
 
         ohdr = {'name': self.filename,
                 '_tensor': {
@@ -86,9 +81,7 @@ class SdmReadBlock(bfp.SourceBlock):
     def on_data(self, reader, ospans):
         indata = reader.read()
 
-        print "INTEGRATION %i" % reader.integration_id
-        print indata.shape
-        #print ospans
+        print("Integration {0}: shape {1}".format(reader.integration_id, indata.shape))
 
         if indata.shape[0] != 0:
             ospans[0].data[0] = indata
@@ -111,7 +104,7 @@ class GainCalBlock(bfp.TransformBlock):
         self.gain = np.zeros(dtype='complex64', shape=shape)
         self.gain.real = gr
         self.gain.imag = gi
-        print('Parsed gainfile {0}'.format(self.gainfile))
+        print('Parsed *fake* gainfile {0}'.format(self.gainfile))
 
         return ohdr
 
@@ -128,12 +121,12 @@ class PrintMeanBlock(bfp.SinkBlock):
         self.n_iter = 0
 
     def on_sequence(self, iseq):
-        print("Starting sequence processing at [%s]" % datetime.now())
+        print("Starting sequence processing at {0}".format(datetime.now()))
         self.n_iter = 0
 
     def on_data(self, ispan):
         now = datetime.now()
-        print("[%s] %s" % (now, np.mean(ispan.data)))
+        print("Time {0}: {1}".format(now, np.mean(ispan.data)))
         self.n_iter += 1
 
 if __name__ == "__main__":
@@ -150,6 +143,6 @@ if __name__ == "__main__":
 
     # Run pipeline
     pipeline = bfp.get_default_pipeline()
-    print pipeline.dot_graph()
+    print(pipeline.dot_graph())
     pipeline.run()
 	
